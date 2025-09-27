@@ -203,56 +203,73 @@ function dedupeIssues(issues: any[]): any[] {
 function getLinkedPrUrl(issue: any): string | null {
   if (!issue || typeof issue !== 'object') return null;
 
-  const direct = [
-    issue.prHtmlUrl,
-    issue.prHtmlURL,
-    issue.prUrl,
-    issue.prURL,
-    issue.pullRequestUrl,
-    issue.pullRequestURL,
-    issue.pullUrl,
-    issue.pull_url,
-    issue.htmlUrl,
-    issue.html_url,
-    issue.url,
-  ];
-  for (const candidate of direct) {
-    if (typeof candidate === 'string' && candidate.trim()) {
-      return candidate.trim();
+  const visited = new Set<any>();
+
+  function search(value: any): string | null {
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      return isLikelyPullRequestUrl(trimmed) ? trimmed : null;
     }
-  }
 
-  const nestedObjects = [
-    issue.pr,
-    issue.linkedPr,
-    issue.pullRequest,
-    issue.pull_request,
-    issue.githubPullRequest,
-  ];
-  for (const obj of nestedObjects) {
-    const nested = getLinkedPrUrl(obj);
-    if (nested) return nested;
-  }
+    if (!value || typeof value !== 'object') return null;
+    if (visited.has(value)) return null;
+    visited.add(value);
 
-  const nestedArrays = [
-    issue.prs,
-    issue.linkedPrs,
-    issue.linkedPRs,
-    issue.pullRequests,
-    issue.pull_requests,
-    issue.githubPullRequests,
-    issue.relatedPrs,
-    issue.related_prs,
-  ];
-  for (const arr of nestedArrays) {
-    if (!Array.isArray(arr)) continue;
-    for (const entry of arr) {
-      const nested = getLinkedPrUrl(entry);
-      if (nested) return nested;
+    const prioritizedKeys = [
+      'prHtmlUrl',
+      'prHtmlURL',
+      'prUrl',
+      'prURL',
+      'pullRequestUrl',
+      'pullRequestURL',
+      'pullUrl',
+      'pull_url',
+      'htmlUrl',
+      'html_url',
+      'url',
+      'link',
+    ];
+
+    for (const key of prioritizedKeys) {
+      if (value && Object.prototype.hasOwnProperty.call(value, key)) {
+        const found = search((value as Record<string, any>)[key]);
+        if (found) return found;
+      }
     }
+
+    if (Array.isArray(value)) {
+      for (const entry of value) {
+        const found = search(entry);
+        if (found) return found;
+      }
+      return null;
+    }
+
+    for (const key of Object.keys(value as Record<string, any>)) {
+      if (prioritizedKeys.includes(key)) continue;
+      const found = search((value as Record<string, any>)[key]);
+      if (found) return found;
+    }
+
+    return null;
   }
 
-  return null;
+  return search(issue);
+}
+
+function isLikelyPullRequestUrl(value: string): boolean {
+  if (!value) return false;
+  const lower = value.toLowerCase();
+  if (!/^https?:\/\//.test(lower)) return false;
+  return (
+    lower.includes('/pull/') ||
+    lower.includes('/pulls/') ||
+    lower.includes('pullrequest') ||
+    lower.includes('pull-request') ||
+    lower.includes('pull_request') ||
+    lower.includes('/merge_requests/') ||
+    lower.includes('/merge-request/')
+  );
 }
 
 function formatPrLink(pr: any): string {
