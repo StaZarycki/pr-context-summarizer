@@ -12,10 +12,17 @@ inputs:
     }
   openaiModel:
     { description: 'Model name', required: false, default: 'gpt-4o-mini' }
+  dryRun:
+    {
+      description: 'If true, do not post a PR comment; just write to job summary',
+      required: false,
+      default: 'false',
+    }
   issueKeyPattern: { required: false, default: "(?<key>[A-Z]{2,}-\\d+)" }
   maxFiles: { required: false, default: '200' }
   maxDiffBytes: { required: false, default: '350000' }
   updateExistingComment: { required: false, default: 'true' }
+
 runs:
   using: 'node24'
   main: 'dist/index.js'

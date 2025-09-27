@@ -100,7 +100,19 @@ async function run() {
     body = render({ pr, issue, tech, keys, businessWarn });
   }
 
-  await upsertComment(octokit, context, body, inputs.updateExistingComment);
+  const dryRun = core.getInput('dryRun') === 'true';
+
+  if (dryRun) {
+    core.info(
+      'Dry-run mode: writing summary to GitHub job summary instead of PR comment.'
+    );
+    await core.summary
+      .addHeading('PR Context Summary (Dry Run)')
+      .addRaw(body, true)
+      .write();
+  } else {
+    await upsertComment(octokit, context, body, inputs.updateExistingComment);
+  }
 }
 
 function extractKeys(
