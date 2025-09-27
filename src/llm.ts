@@ -21,6 +21,7 @@ type PrBundle = {
   number: number;
   title: string;
   author: string;
+  htmlUrl: string;
   stats: { files: number; additions: number; deletions: number };
   files: Array<{
     filename: string;
