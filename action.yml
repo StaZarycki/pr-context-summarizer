@@ -4,6 +4,7 @@ inputs:
   jiraBaseUrl: { required: true }
   jiraEmail: { required: true }
   jiraApiToken: { required: true }
+  githubToken: { required: false }
   issueKeyPattern: { required: false, default: "(?<key>[A-Z]{2,}-\\d+)" }
   maxFiles: { required: false, default: '200' }
   maxDiffBytes: { required: false, default: '350000' }
