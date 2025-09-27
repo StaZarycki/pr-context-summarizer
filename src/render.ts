@@ -21,6 +21,10 @@ export function render({
   const titleText = multipleIssues
     ? pr.title
     : issue?.title ?? pr.title;
+  const issueSummary = !multipleIssues && issue?.description
+    ? `\n- Summary: ${linkPrNumbers(truncate(issue.description, 400))}`
+    : '';
+
   const lines = [
     `${marker}
 # ${titleKey}: ${titleText}
@@ -29,19 +33,15 @@ export function render({
 - ${
       multipleIssues
         ? 'Multiple Jira issues referenced'
-        : issue
-        ? `Status: ${issue.status} · Priority: ${
+    : issue
+    ? `Status: ${issue.status} · Priority: ${
             issue.priority ?? 'n/a'
           } · Assignee: ${issue.assignee ?? 'n/a'}${
             issue.estimate ? ` · Estimate: ${issue.estimate}` : ''
           }`
         : 'No linked issue data'
     }
-${
-  !multipleIssues && issue?.description
-    ? `- Summary: ${truncate(issue.description, 400)}`
-    : ''
-}${businessWarn ? `\n- ${businessWarn}` : ''}
+${issueSummary}${businessWarn ? `\n- ${businessWarn}` : ''}
 
 **Technical highlights**
 - Scope: ${pr.stats.files} files, +${pr.stats.additions}/-${pr.stats.deletions}
@@ -85,6 +85,12 @@ ${
 }
 function truncate(s: string, n: number) {
   return s.length > n ? s.slice(0, n - 1) + '…' : s;
+}
+
+function linkPrNumbers(text: string): string {
+  return text.replace(/\bPR\s+#?(\d+)\b/gi, (full, num: string) =>
+    full.includes('#') ? full : `PR #${num}`
+  );
 }
 
 // src/render.ts
@@ -139,13 +145,15 @@ export function renderWithAi({
       }${issue?.estimate ? ` · Estimate: ${issue.estimate}` : ''}`
     : 'No linked issue data';
 
+  const normalizedDescription = linkPrNumbers(aiDescription);
+
   return `${marker}
 # ${titleKey}: ${titleText}
 
 **Business context**
 - ${businessContext}${businessWarn ? `\n- ${businessWarn}` : ''}
 
-${aiDescription}
+${normalizedDescription}
 
 **Related issues**
 ${related || '—'}
