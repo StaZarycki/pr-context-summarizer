@@ -48,6 +48,7 @@ export async function fetchPrBundle(
     title: pr.title,
     body: pr.body ?? '',
     author: pr.user?.login ?? '',
+    htmlUrl: pr.html_url ?? '',
     headRef: pr.head.ref,
     baseRef: pr.base.ref,
     isDraft: !!pr.draft,

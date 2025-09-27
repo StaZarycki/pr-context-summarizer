@@ -67,7 +67,7 @@ ${
 - Observability: (logs/metrics/alerts)
 
 **Links**
-- PR: #${pr.number}
+- PR: ${formatPrLink(pr)}
 ${
   multipleIssues
     ? uniqueKeys.length
@@ -149,7 +149,7 @@ ${aiDescription}
 ${related || '—'}
 
 **Links**
-- PR: #${pr.number}
+- PR: ${formatPrLink(pr)}
 ${
   !multipleIssues && issue
     ? `- Jira: [${issue.key}](${base ? `${base}/browse/${issue.key}` : ''})`
@@ -196,4 +196,8 @@ function dedupeIssues(issues: any[]): any[] {
     out.push(it);
   }
   return out;
+}
+
+function formatPrLink(pr: any): string {
+  return pr?.htmlUrl ? `[#${pr.number}](${pr.htmlUrl})` : `#${pr.number}`;
 }
