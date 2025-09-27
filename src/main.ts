@@ -5,6 +5,7 @@ import { fetchJiraIssue } from './jira.js';
 import { analyze } from './heuristics.js';
 import { render } from './render.js';
 import { upsertComment } from './comment.js';
+import { llmSummarize } from './llm.js';
 
 type OctokitClient = ReturnType<typeof github.getOctokit>;
 
@@ -70,7 +71,35 @@ async function run() {
   }
 
   const tech = analyze(pr);
-  const body = render({ pr, issue, tech, keys, businessWarn });
+  let body: string;
+
+  const openaiApiKey =
+    core.getInput('openaiApiKey') || process.env.OPENAI_API_KEY || '';
+  const openaiModel = core.getInput('openaiModel') || 'gpt-4o-mini';
+
+  if (openaiApiKey) {
+    try {
+      body = await llmSummarize({
+        pr,
+        issue,
+        tech,
+        keys,
+        businessWarn,
+        apiKey: openaiApiKey,
+        model: openaiModel,
+      });
+    } catch (e: any) {
+      core.warning(
+        `AI summary failed (${
+          e.message ?? e
+        }); falling back to heuristic renderer.`
+      );
+      body = render({ pr, issue, tech, keys, businessWarn });
+    }
+  } else {
+    body = render({ pr, issue, tech, keys, businessWarn });
+  }
+
   await upsertComment(octokit, context, body, inputs.updateExistingComment);
 }
 
