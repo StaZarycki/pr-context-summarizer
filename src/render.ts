@@ -80,6 +80,10 @@ export function renderWithAi({
   aiDescription: string;
 }) {
   const marker = '<!-- pr-synth:v1 -->';
+  const jiraUrl = issue
+    ? `${process.env.JIRA_BASE_URL}/browse/${issue.key}`
+    : null;
+
   return `${marker}
 # ${issue?.key ?? keys[0] ?? `PR #${pr.number}`}: ${issue?.title ?? pr.title}
 
@@ -98,7 +102,7 @@ ${aiDescription}
 
 **Links**
 - PR: #${pr.number}
-${issue ? `- Jira: ${issue.key}` : ''}
+${jiraUrl ? `- Jira: [${issue!.key}](${jiraUrl})` : ''}
 
 <sub>Keys seen: ${keys.join(', ') || '—'}</sub>
 `;
