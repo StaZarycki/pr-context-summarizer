@@ -67,22 +67,35 @@ function truncate(s: string, n: number) {
   return s.length > n ? s.slice(0, n - 1) + '…' : s;
 }
 
+// src/render.ts
 export function renderWithAi({
   pr,
   issue,
   keys,
   businessWarn,
   aiDescription,
+  allIssues,
 }: {
   pr: any;
   issue: any | null;
   keys: string[];
   businessWarn: string | null;
   aiDescription: string;
+  allIssues: Record<string, any>;
 }) {
   const marker = '<!-- pr-synth:v1 -->';
-  const jiraBaseUrl = core.getInput('jiraBaseUrl');
-  const jiraUrl = issue ? `${jiraBaseUrl}/browse/${issue.key}` : null;
+  const base = process.env.JIRA_BASE_URL || ''; // pass as env in workflow if you want
+
+  const related = Object.keys(allIssues).length
+    ? Object.values(allIssues)
+        .map(
+          (it: any) =>
+            `- [${it.key}](${base ? `${base}/browse/${it.key}` : ''}) ${
+              it.title ?? ''
+            }`
+        )
+        .join('\n')
+    : '';
 
   return `${marker}
 # ${issue?.key ?? keys[0] ?? `PR #${pr.number}`}: ${issue?.title ?? pr.title}
@@ -100,10 +113,16 @@ export function renderWithAi({
 
 ${aiDescription}
 
+**Related issues**
+${related || '—'}
+
 **Links**
 - PR: #${pr.number}
-${jiraUrl ? `- Jira: [${issue!.key}](${jiraUrl})` : ''}
-
+${
+  issue
+    ? `- Jira: [${issue.key}](${base ? `${base}/browse/${issue.key}` : ''})`
+    : ''
+}
 <sub>Keys seen: ${keys.join(', ') || '—'}</sub>
 `;
 }

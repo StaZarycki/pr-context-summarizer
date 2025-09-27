@@ -44,3 +44,15 @@ function extractPlainText(desc: any): string {
     return '';
   }
 }
+
+export async function fetchManyJiraIssues(inputs: Inputs, keys: string[]) {
+  const out: Record<string, any> = {};
+  for (const key of keys) {
+    try {
+      out[key] = await fetchJiraIssue(inputs, key);
+    } catch {
+      /* ignore missing keys */
+    }
+  }
+  return out;
+}

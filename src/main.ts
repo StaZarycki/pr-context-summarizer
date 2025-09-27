@@ -1,13 +1,32 @@
 import * as core from '@actions/core';
 import * as github from '@actions/github';
 import { fetchPrBundle } from './github.js';
-import { fetchJiraIssue } from './jira.js';
+import { fetchJiraIssue, fetchManyJiraIssues } from './jira.js';
 import { analyze } from './heuristics.js';
 import { render, renderWithAi } from './render.js';
 import { upsertComment } from './comment.js';
 import { generateAiDescription } from './llm.js';
 
 type OctokitClient = ReturnType<typeof github.getOctokit>;
+
+function extractAllKeys(pr: any, pattern: string): string[] {
+  const rx = new RegExp(pattern, 'g');
+  const sources = [
+    pr.title,
+    pr.headRef,
+    pr.baseRef,
+    ...pr.commits.map((c: any) => c.message),
+    ...pr.files.map((f: any) => f.filename),
+  ];
+  const keys = new Set<string>();
+  for (const s of sources) {
+    if (!s) continue;
+    let m: RegExpExecArray | null;
+    while ((m = rx.exec(s)) !== null)
+      keys.add((m.groups?.key ?? m[0]).toUpperCase());
+  }
+  return [...keys].slice(0, 25); // cap to avoid spam
+}
 
 async function run() {
   const token =
@@ -51,23 +70,18 @@ async function run() {
     inputs.maxFiles,
     inputs.maxDiffBytes
   );
-  const keys = extractKeys(
-    [pr.title, pr.headRef, pr.baseRef],
-    inputs.issueKeyPattern
-  );
+  const keys = extractAllKeys(pr, inputs.issueKeyPattern);
   const primaryKey = keys[0];
 
-  let issue: any = null;
+  let issues: Record<string, any> = {};
+  let primaryIssue: any = null;
   let businessWarn: string | null = null;
 
-  if (primaryKey) {
-    try {
-      issue = await fetchJiraIssue(inputs, primaryKey);
-    } catch (e: any) {
-      businessWarn = `⚠️ Jira fetch failed: ${e.message ?? String(e)}`;
-    }
+  if (keys.length) {
+    issues = await fetchManyJiraIssues(inputs, keys);
+    primaryIssue = issues[primaryKey] ?? null;
   } else {
-    businessWarn = '⚠️ No issue key found in PR title/branch.';
+    businessWarn = '⚠️ No issue keys found in title/branch/commits.';
   }
 
   const tech = analyze(pr);
@@ -81,12 +95,19 @@ async function run() {
     try {
       const aiDescription = await generateAiDescription({
         pr,
-        issue,
+        issues,
         tech,
         apiKey: openaiApiKey,
         model: openaiModel,
       });
-      body = renderWithAi({ pr, issue, keys, businessWarn, aiDescription });
+      body = renderWithAi({
+        pr,
+        issue: primaryIssue,
+        keys,
+        businessWarn,
+        aiDescription,
+        allIssues: issues,
+      });
     } catch (e: any) {
       core.warning(
         `AI description failed: ${
@@ -94,10 +115,10 @@ async function run() {
         }; falling back to heuristic render.`
       );
       // Fallback to your existing render()
-      body = render({ pr, issue, tech, keys, businessWarn });
+      body = render({ pr, issue: primaryIssue, tech, keys, businessWarn });
     }
   } else {
-    body = render({ pr, issue, tech, keys, businessWarn });
+    body = render({ pr, issue: primaryIssue, tech, keys, businessWarn });
   }
 
   const dryRun = core.getInput('dryRun') === 'true';

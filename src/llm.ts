@@ -36,13 +36,13 @@ type PrBundle = {
 
 export async function generateAiDescription({
   pr,
-  issue,
+  issues,
   tech,
   apiKey,
   model,
 }: {
   pr: PrBundle;
-  issue: Jira;
+  issues: Record<string, any>;
   tech: Tech;
   apiKey: string;
   model: string;
@@ -67,26 +67,20 @@ Rules:
 - Use at most ~2 emojis total per section (the heading emoji counts as one).
 - Mention Jira context briefly when useful, but don't bloat.`;
 
+  const relatedIssues = Object.values(issues || {})
+    .slice(0, 20)
+    .map((it: any) => `- ${it.key}: ${it.title} [${it.status ?? 'n/a'}]`)
+    .join('\n');
+
   const user = [
     `PR: #${pr.number} | ${pr.title}`,
-    `Branch: ${pr.headRef} → ${pr.baseRef} | Author: ${pr.author}`,
     `Scope: ${pr.stats.files} files, +${pr.stats.additions}/-${pr.stats.deletions}`,
-    issue
-      ? `Jira: ${issue.key} | ${issue.title} | Status=${
-          issue.status ?? 'n/a'
-        } | Priority=${issue.priority ?? 'n/a'} | Assignee=${
-          issue.assignee ?? 'n/a'
-        } | Estimate=${issue.estimate ?? 'n/a'}`
-      : `Jira: not linked/available`,
-    issue?.description
-      ? `Jira summary: ${truncate(issue.description, 600)}`
-      : ``,
-    ``,
-    `=== CODE SIGNALS (compact) ===`,
+    relatedIssues
+      ? `Related Jira issues:\n${relatedIssues}`
+      : `Related Jira issues: none`,
+    '=== CODE SIGNALS ===',
     codeSignals,
-  ]
-    .filter(Boolean)
-    .join('\n');
+  ].join('\n');
 
   const format = [
     `### ✨ Most important changes
@@ -116,7 +110,7 @@ Rules:
   });
 
   const out = (res.output_text ?? '').trim();
-  return validateSections(out) ? out : fallbackSections(pr, issue, tech);
+  return validateSections(out) ? out : fallbackSections(pr, issues[0], tech);
 }
 
 // Build compact signals from diffs + commits without pasting giant patches
