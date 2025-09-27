@@ -1,159 +1,235 @@
-// src/llm.ts
 import OpenAI from 'openai';
 
-type SummarizeArgs = {
-  pr: any;
-  issue: any | null;
-  tech: {
-    topDirs: string[];
-    riskyHits: string[];
-    depMajors: string[];
-    breakingHints: string[];
-  };
-  keys: string[];
-  businessWarn: string | null;
-  apiKey: string;
-  model: string;
+type Jira = {
+  key: string;
+  title: string;
+  status?: string;
+  priority?: string;
+  assignee?: string;
+  estimate?: number | null;
+  description?: string;
+} | null;
+
+type Tech = {
+  topDirs: string[];
+  riskyHits: string[];
+  depMajors: string[];
+  breakingHints: string[];
 };
 
-export async function llmSummarize({
+type PrBundle = {
+  number: number;
+  title: string;
+  author: string;
+  stats: { files: number; additions: number; deletions: number };
+  files: Array<{
+    filename: string;
+    status: string;
+    additions: number;
+    deletions: number;
+    patch?: string;
+  }>;
+  commits: Array<{ sha: string; message: string }>;
+  headRef: string;
+  baseRef: string;
+};
+
+export async function generateAiDescription({
   pr,
   issue,
   tech,
-  keys,
-  businessWarn,
   apiKey,
   model,
-}: SummarizeArgs): Promise<string> {
+}: {
+  pr: PrBundle;
+  issue: Jira;
+  tech: Tech;
+  apiKey: string;
+  model: string;
+}): Promise<string> {
   const client = new OpenAI({ apiKey });
 
-  // Keep prompt small; feed only signals, not full diff
-  const sys = `You write one compact Markdown PR comment for engineers + PMs.
-Follow EXACTLY this structure and be concise. If info is missing, state it plainly.`;
+  // 1) Build compact, token-friendly context from code changes
+  const codeSignals = buildCodeSignals(pr, tech);
+
+  // 2) System + task prompt that enforces sectioned output with minimal emojis
+  const system = `You are a meticulous, concise code change summarizer for pull requests.
+Write a compact Markdown description with these EXACT sections and emojis:
+1) ✨ Most important changes
+2) 💥 Breaking changes
+3) 🐛 Fixes
+4) ⚠️ Things to consider
+
+Rules:
+- Bullet lists only, 1–5 bullets per section.
+- Prefer concrete details: APIs, routes, types, schemas, env vars, migrations.
+- If a section has nothing relevant, write "—".
+- Use at most ~2 emojis total per section (the heading emoji counts as one).
+- Mention Jira context briefly when useful, but don't bloat.`;
 
   const user = [
-    `Repo PR #: ${pr.number}`,
-    `PR Title: ${pr.title}`,
-    `Author: ${pr.author}`,
+    `PR: #${pr.number} | ${pr.title}`,
+    `Branch: ${pr.headRef} → ${pr.baseRef} | Author: ${pr.author}`,
     `Scope: ${pr.stats.files} files, +${pr.stats.additions}/-${pr.stats.deletions}`,
-    `Top components: ${tech.topDirs.join(', ') || '—'}`,
-    tech.riskyHits.length
-      ? `Risky areas: ${tech.riskyHits.slice(0, 8).join(', ')}`
-      : `Risky areas: —`,
-    tech.depMajors.length
-      ? `Major deps: ${tech.depMajors.join(', ')}`
-      : `Major deps: —`,
-    tech.breakingHints.length
-      ? `Potential breaking: ${tech.breakingHints.slice(0, 8).join(' | ')}`
-      : `Potential breaking: —`,
-    '',
     issue
-      ? `Issue: ${issue.key} | ${issue.title} | Status=${
-          issue.status
+      ? `Jira: ${issue.key} | ${issue.title} | Status=${
+          issue.status ?? 'n/a'
         } | Priority=${issue.priority ?? 'n/a'} | Assignee=${
           issue.assignee ?? 'n/a'
         } | Estimate=${issue.estimate ?? 'n/a'}`
-      : 'Issue: not available',
+      : `Jira: not linked/available`,
     issue?.description
-      ? `Issue summary: ${truncate(issue.description, 600)}`
-      : '',
-    businessWarn ? `Warnings: ${businessWarn}` : '',
+      ? `Jira summary: ${truncate(issue.description, 600)}`
+      : ``,
+    ``,
+    `=== CODE SIGNALS (compact) ===`,
+    codeSignals,
   ]
     .filter(Boolean)
     .join('\n');
 
-  const format = `# ${issue?.key ?? keys[0] ?? `PR #${pr.number}`}: ${
-    issue?.title ?? pr.title
-  }
+  const format = [
+    `### ✨ Most important changes
+- {bullets}
 
-**Business context**
-- {status/priority/assignee/estimate}
-- Summary: {one or two sentences}
-- ${businessWarn ? 'Note: include Jira warning if present.' : ''}
+### 💥 Breaking changes
+- {bullets}
 
-**Technical highlights**
-- Scope: {files, lines}
-- Components: {top dirs}
-- Risky areas: {if any}
-- Major deps: {if any}
-- Potential breaking:
-  - {bulleted hints or "—"}
+### 🐛 Fixes
+- {bullets}
 
-**Testing & rollout**
-- Tests updated/added: {short}
-- Manual checks: {short}
-- Backward compatibility: {short}
-- Observability: {short}
+### ⚠️ Things to consider
+- {bullets}`,
+  ].join('\n\n');
 
-**Links**
-- PR: #${pr.number}
-${issue ? `- Jira: ${issue.key}` : ''}
-
-<sub>Keys seen: ${keys.join(', ') || '—'}</sub>`;
-
-  const completion = await client.responses.create({
+  const res = await client.responses.create({
     model,
-    temperature: 0.2,
-    max_output_tokens: 700,
+    temperature: 0.15,
+    max_output_tokens: 650,
     input: [
-      { role: 'system', content: sys },
+      { role: 'system', content: system },
       {
         role: 'user',
-        content: `Write the comment in this exact skeleton:\n${format}\n\nContext:\n${user}`,
+        content: `Create the description using this skeleton exactly:\n\n${format}\n\nContext:\n${user}`,
       },
     ],
   });
 
-  const text = completion.output_text?.trim() ?? '';
-  // Extremely defensive: ensure our hidden marker gets added later by render/upsert
-  return text || fallbackMinimal(pr, issue, tech, keys, businessWarn);
+  const out = (res.output_text ?? '').trim();
+  return validateSections(out) ? out : fallbackSections(pr, issue, tech);
+}
+
+// Build compact signals from diffs + commits without pasting giant patches
+function buildCodeSignals(pr: PrBundle, tech: Tech): string {
+  const topFiles = pr.files.slice(0, 60); // cap to avoid token blowup
+  const fileLines = topFiles
+    .map((f) => {
+      const hints: string[] = [];
+      // quick regex probes inside patch (truncated by your fetcher)
+      if (f.patch) {
+        if (/\b(GET|POST|PUT|DELETE)\b.*\//.test(f.patch))
+          hints.push('route-change');
+        if (/^-\s*export\s+/m.test(f.patch)) hints.push('removed-export');
+        if (/\bDROP\b|\bRENAME COLUMN\b|\bSET NOT NULL\b/i.test(f.patch))
+          hints.push('migration-risk');
+        if (/process\.env|ENV|secrets?/i.test(f.patch)) hints.push('env-var');
+        if (/GraphQL|schema|type\s+\w+|@ObjectType|@Field/.test(f.patch))
+          hints.push('schema-change');
+      }
+      const tag = hints.length ? ` [${hints.join(',')}]` : '';
+      return `• ${f.status.toUpperCase()} ${f.filename} (+${f.additions}/-${
+        f.deletions
+      })${tag}`;
+    })
+    .join('\n');
+
+  const cc = pr.commits
+    .slice(0, 30)
+    .map((c) => c.message.split('\n')[0])
+    .filter(Boolean);
+
+  const breakingFromCommits = cc
+    .filter((m) => /BREAKING CHANGE|!:/.test(m))
+    .map((m) => `• ${m}`)
+    .join('\n');
+
+  const depMajors = tech.depMajors.length
+    ? `Major deps: ${tech.depMajors.join(', ')}`
+    : '';
+
+  const risky = tech.riskyHits.length
+    ? `Risky areas: ${tech.riskyHits.slice(0, 12).join(', ')}`
+    : '';
+
+  const hints = tech.breakingHints.length
+    ? `Heuristic breaking hints:\n${tech.breakingHints
+        .slice(0, 10)
+        .map((x) => `• ${x}`)
+        .join('\n')}`
+    : '';
+
+  return [
+    `Top components: ${tech.topDirs.join(', ') || '—'}`,
+    depMajors,
+    risky,
+    hints,
+    breakingFromCommits
+      ? `Conventional commit signals:\n${breakingFromCommits}`
+      : '',
+    `Files (${Math.min(pr.files.length, 60)} of ${pr.files.length} shown):`,
+    fileLines,
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+function validateSections(md: string): boolean {
+  return (
+    /### ✨ Most important changes/i.test(md) &&
+    /### 💥 Breaking changes/i.test(md) &&
+    /### 🐛 Fixes/i.test(md) &&
+    /### ⚠️ Things to consider/i.test(md)
+  );
+}
+
+function fallbackSections(pr: PrBundle, issue: Jira, tech: Tech): string {
+  // Simple heuristic fallback that fills sections with your existing signals
+  const important = [
+    `• Scope: ${pr.stats.files} files, +${pr.stats.additions}/-${pr.stats.deletions}`,
+    tech.topDirs[0] ? `• Main components: ${tech.topDirs.join(', ')}` : '',
+  ].filter(Boolean);
+  const breaking = tech.breakingHints.length
+    ? tech.breakingHints.slice(0, 6).map((x) => `• ${x}`)
+    : ['• —'];
+  const fixes = pr.commits
+    .map((c) => c.message.split('\n')[0])
+    .filter((m) => /\bfix|bug|hotfix\b/i.test(m))
+    .slice(0, 5)
+    .map((m) => `• ${m}`);
+  if (fixes.length === 0) fixes.push('• —');
+  const consider = [
+    tech.depMajors.length
+      ? `• Major dependency bumps: ${tech.depMajors.join(', ')}`
+      : '',
+    issue ? '' : '• No linked issue context found',
+  ].filter(Boolean);
+  if (consider.length === 0) consider.push('• —');
+
+  return [
+    `### ✨ Most important changes
+${important.join('\n')}
+
+### 💥 Breaking changes
+${breaking.join('\n')}
+
+### 🐛 Fixes
+${fixes.join('\n')}
+
+### ⚠️ Things to consider
+${consider.join('\n')}`,
+  ].join('\n\n');
 }
 
 function truncate(s: string, n: number) {
-  return s.length > n ? s.slice(0, n - 1) + '…' : s;
-}
-
-function fallbackMinimal(
-  pr: any,
-  issue: any | null,
-  tech: any,
-  keys: string[],
-  businessWarn: string | null
-) {
-  return `# ${issue?.key ?? keys[0] ?? `PR #${pr.number}`}: ${
-    issue?.title ?? pr.title
-  }
-
-**Business context**
-- ${
-    issue
-      ? `Status: ${issue.status} · Priority: ${
-          issue.priority ?? 'n/a'
-        } · Assignee: ${issue.assignee ?? 'n/a'}${
-          issue?.estimate ? ` · Estimate: ${issue.estimate}` : ''
-        }`
-      : 'No linked issue data'
-  }${businessWarn ? `\n- ${businessWarn}` : ''}
-
-**Technical highlights**
-- Scope: ${pr.stats.files} files, +${pr.stats.additions}/-${pr.stats.deletions}
-- Components: ${tech.topDirs.join(', ') || '—'}
-- Risky areas: ${
-    tech.riskyHits[0] ? tech.riskyHits.slice(0, 6).join(', ') : '—'
-  }
-- Major deps: ${tech.depMajors[0] ? tech.depMajors.join(', ') : '—'}
-- Potential breaking:
-  - ${tech.breakingHints[0] ? tech.breakingHints.join('\n  - ') : '—'}
-
-**Testing & rollout**
-- Tests updated/added: (fill)
-- Manual checks: (fill)
-- Backward compatibility: (notes)
-- Observability: (logs/metrics)
-
-**Links**
-- PR: #${pr.number}
-${issue ? `- Jira: ${issue.key}` : ''}
-
-<sub>Keys seen: ${keys.join(', ') || '—'}</sub>`;
+  return s && s.length > n ? s.slice(0, n - 1) + '…' : s;
 }

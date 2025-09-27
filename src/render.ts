@@ -65,3 +65,41 @@ ${issue ? `- Jira: ${issue.key}` : ''}
 function truncate(s: string, n: number) {
   return s.length > n ? s.slice(0, n - 1) + '…' : s;
 }
+
+export function renderWithAi({
+  pr,
+  issue,
+  keys,
+  businessWarn,
+  aiDescription,
+}: {
+  pr: any;
+  issue: any | null;
+  keys: string[];
+  businessWarn: string | null;
+  aiDescription: string;
+}) {
+  const marker = '<!-- pr-synth:v1 -->';
+  return `${marker}
+# ${issue?.key ?? keys[0] ?? `PR #${pr.number}`}: ${issue?.title ?? pr.title}
+
+**Business context**
+- ${
+    issue
+      ? `Status: ${issue.status} · Priority: ${
+          issue.priority ?? 'n/a'
+        } · Assignee: ${issue.assignee ?? 'n/a'}${
+          issue?.estimate ? ` · Estimate: ${issue.estimate}` : ''
+        }`
+      : 'No linked issue data'
+  }${businessWarn ? `\n- ${businessWarn}` : ''}
+
+${aiDescription}
+
+**Links**
+- PR: #${pr.number}
+${issue ? `- Jira: ${issue.key}` : ''}
+
+<sub>Keys seen: ${keys.join(', ') || '—'}</sub>
+`;
+}

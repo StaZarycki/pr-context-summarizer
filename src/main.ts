@@ -3,9 +3,9 @@ import * as github from '@actions/github';
 import { fetchPrBundle } from './github.js';
 import { fetchJiraIssue } from './jira.js';
 import { analyze } from './heuristics.js';
-import { render } from './render.js';
+import { render, renderWithAi } from './render.js';
 import { upsertComment } from './comment.js';
-import { llmSummarize } from './llm.js';
+import { generateAiDescription } from './llm.js';
 
 type OctokitClient = ReturnType<typeof github.getOctokit>;
 
@@ -71,29 +71,29 @@ async function run() {
   }
 
   const tech = analyze(pr);
-  let body: string;
 
   const openaiApiKey =
     core.getInput('openaiApiKey') || process.env.OPENAI_API_KEY || '';
   const openaiModel = core.getInput('openaiModel') || 'gpt-4o-mini';
 
+  let body: string;
   if (openaiApiKey) {
     try {
-      body = await llmSummarize({
+      const aiDescription = await generateAiDescription({
         pr,
         issue,
         tech,
-        keys,
-        businessWarn,
         apiKey: openaiApiKey,
         model: openaiModel,
       });
+      body = renderWithAi({ pr, issue, keys, businessWarn, aiDescription });
     } catch (e: any) {
       core.warning(
-        `AI summary failed (${
-          e.message ?? e
-        }); falling back to heuristic renderer.`
+        `AI description failed: ${
+          e.message ?? String(e)
+        }; falling back to heuristic render.`
       );
+      // Fallback to your existing render()
       body = render({ pr, issue, tech, keys, businessWarn });
     }
   } else {
