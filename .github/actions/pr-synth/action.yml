@@ -1,0 +1,13 @@
+name: 'PR Synth (Jira + PR summary)'
+description: 'Summarize PR with business context from Jira + technical highlights'
+inputs:
+  jiraBaseUrl: { required: true }
+  jiraEmail: { required: true }
+  jiraApiToken:{ required: true }
+  issueKeyPattern: { required: false, default: "(?<key>[A-Z]{2,}-\\d+)" }
+  maxFiles: { required: false, default: '200' }
+  maxDiffBytes: { required: false, default: '350000' }
+  updateExistingComment: { required: false, default: 'true' }
+runs:
+  using: 'node24'
+  main: 'dist/index.js'

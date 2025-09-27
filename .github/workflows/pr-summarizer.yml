@@ -1,0 +1,29 @@
+name: PR Synth
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+  workflow_dispatch:
+jobs:
+  summarize:
+    permissions:
+      contents: read
+      pull-requests: write
+    runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - name: PR Context Summarizer
+        uses: ./.github/actions/pr-synth
+        with:
+          jiraBaseUrl: ${{ vars.JIRA_BASE_URL }}
+          jiraEmail: ${{ secrets.JIRA_EMAIL }}
+          jiraApiToken: ${{ secrets.JIRA_API_TOKEN }}
+          issueKeyPattern: '(?<key>[A-Z]{2,}-\\d+)'
+          maxFiles: '200'
+          maxDiffBytes: '350000'
+          updateExistingComment: 'true'
