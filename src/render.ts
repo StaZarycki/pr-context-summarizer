@@ -28,7 +28,7 @@ export function render({
 **Business context**
 - ${
       multipleIssues
-        ? `Linked issues: ${formatIssueList(uniqueKeys)}`
+        ? 'Multiple Jira issues referenced'
         : issue
         ? `Status: ${issue.status} · Priority: ${
             issue.priority ?? 'n/a'
@@ -130,7 +130,7 @@ export function renderWithAi({
     ? pr.title
     : issue?.title ?? pr.title;
   const businessContext = multipleIssues
-    ? `Linked issues: ${formatIssueList(uniqueKeys)}`
+    ? 'Multiple Jira issues referenced'
     : issue
     ? `Status: ${issue.status} · Priority: ${issue.priority ?? 'n/a'} · Assignee: ${
         issue.assignee ?? 'n/a'
