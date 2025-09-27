@@ -109,12 +109,14 @@ export function renderWithAi({
   const relatedIssues = dedupeIssues(Object.values(allIssues));
   const related = relatedIssues.length
     ? relatedIssues
-        .map(
-          (it: any) =>
-            `- [${it.key}](${base ? `${base}/browse/${it.key}` : ''}) ${
-              it.title ?? ''
-            }`
-        )
+        .map((it: any) => {
+          const prLink = getLinkedPrUrl(it);
+          const fallback = base ? `${base}/browse/${it.key}` : '';
+          const url = prLink || fallback;
+          const key = url ? `[${it.key}](${url})` : it.key;
+          const title = it.title ? ` ${it.title}` : '';
+          return `- ${key}${title}`.trimEnd();
+        })
         .join('\n')
     : '';
 
@@ -196,6 +198,61 @@ function dedupeIssues(issues: any[]): any[] {
     out.push(it);
   }
   return out;
+}
+
+function getLinkedPrUrl(issue: any): string | null {
+  if (!issue || typeof issue !== 'object') return null;
+
+  const direct = [
+    issue.prHtmlUrl,
+    issue.prHtmlURL,
+    issue.prUrl,
+    issue.prURL,
+    issue.pullRequestUrl,
+    issue.pullRequestURL,
+    issue.pullUrl,
+    issue.pull_url,
+    issue.htmlUrl,
+    issue.html_url,
+    issue.url,
+  ];
+  for (const candidate of direct) {
+    if (typeof candidate === 'string' && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+
+  const nestedObjects = [
+    issue.pr,
+    issue.linkedPr,
+    issue.pullRequest,
+    issue.pull_request,
+    issue.githubPullRequest,
+  ];
+  for (const obj of nestedObjects) {
+    const nested = getLinkedPrUrl(obj);
+    if (nested) return nested;
+  }
+
+  const nestedArrays = [
+    issue.prs,
+    issue.linkedPrs,
+    issue.linkedPRs,
+    issue.pullRequests,
+    issue.pull_requests,
+    issue.githubPullRequests,
+    issue.relatedPrs,
+    issue.related_prs,
+  ];
+  for (const arr of nestedArrays) {
+    if (!Array.isArray(arr)) continue;
+    for (const entry of arr) {
+      const nested = getLinkedPrUrl(entry);
+      if (nested) return nested;
+    }
+  }
+
+  return null;
 }
 
 function formatPrLink(pr: any): string {
