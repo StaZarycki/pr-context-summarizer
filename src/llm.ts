@@ -67,9 +67,11 @@ Rules:
 - Use at most ~2 emojis total per section (the heading emoji counts as one).
 - Mention Jira context briefly when useful, but don't bloat.`;
 
-  const relatedIssues = Object.values(issues || {})
+  const issueList = Object.values(issues || {}) as Jira[];
+  const relatedIssues = issueList
+    .filter((it): it is NonNullable<Jira> => Boolean(it))
     .slice(0, 20)
-    .map((it: any) => `- ${it.key}: ${it.title} [${it.status ?? 'n/a'}]`)
+    .map((it) => `- ${it.key}: ${it.title} [${it.status ?? 'n/a'}]`)
     .join('\n');
 
   const user = [
@@ -110,7 +112,7 @@ Rules:
   });
 
   const out = (res.output_text ?? '').trim();
-  return validateSections(out) ? out : fallbackSections(pr, issues[0], tech);
+  return validateSections(out) ? out : fallbackSections(pr, issueList, tech);
 }
 
 // Build compact signals from diffs + commits without pasting giant patches
@@ -186,7 +188,7 @@ function validateSections(md: string): boolean {
   );
 }
 
-function fallbackSections(pr: PrBundle, issue: Jira, tech: Tech): string {
+function fallbackSections(pr: PrBundle, issues: Jira[], tech: Tech): string {
   // Simple heuristic fallback that fills sections with your existing signals
   const important = [
     `• Scope: ${pr.stats.files} files, +${pr.stats.additions}/-${pr.stats.deletions}`,
@@ -201,12 +203,20 @@ function fallbackSections(pr: PrBundle, issue: Jira, tech: Tech): string {
     .slice(0, 5)
     .map((m) => `• ${m}`);
   if (fixes.length === 0) fixes.push('• —');
+  const linkedIssues = (issues || [])
+    .filter((it): it is NonNullable<Jira> => Boolean(it))
+    .map((it) =>
+      `• ${it.key}: ${it.title}${it.status ? ` [${it.status}]` : ''}`,
+    );
   const consider = [
     tech.depMajors.length
       ? `• Major dependency bumps: ${tech.depMajors.join(', ')}`
       : '',
-    issue ? '' : '• No linked issue context found',
+    ...linkedIssues,
   ].filter(Boolean);
+  if (linkedIssues.length === 0) {
+    consider.push('• No linked issue context found');
+  }
   if (consider.length === 0) consider.push('• —');
 
   return [
