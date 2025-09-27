@@ -4,34 +4,18 @@ inputs:
   jiraBaseUrl: { required: true }
   jiraEmail: { required: true }
   jiraApiToken: { required: true }
-  githubToken: {
-    required: false
-  }
-  openaiApiKey: {
-    description: 'OpenAI API key (optional). If set, AI writes the summary; heuristics are a fallback.'
-    required: false
-  }
-  openaiModel: {
-    description: 'Model name'
-    required: false
-    default: 'gpt-4o-mini'
-  }
-  issueKeyPattern: {
-    required: false
-    default: "(?<key>[A-Z]{2,}-\\d+)"
-  }
-  maxFiles: {
-    required: false
-    default: '200'
-  }
-  maxDiffBytes: {
-    required: false
-    default: '350000'
-  }
-  updateExistingComment: {
-    required: false
-    default: 'true'
-  }
+  githubToken: { required: false }
+  openaiApiKey:
+    {
+      description: 'OpenAI API key (optional). If set, AI writes the summary; heuristics are a fallback.',
+      required: false,
+    }
+  openaiModel:
+    { description: 'Model name', required: false, default: 'gpt-4o-mini' }
+  issueKeyPattern: { required: false, default: "(?<key>[A-Z]{2,}-\\d+)" }
+  maxFiles: { required: false, default: '200' }
+  maxDiffBytes: { required: false, default: '350000' }
+  updateExistingComment: { required: false, default: 'true' }
 runs:
   using: 'node24'
   main: 'dist/index.js'
