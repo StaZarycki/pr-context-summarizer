@@ -13,13 +13,23 @@ export function render({
   businessWarn: string | null;
 }) {
   const marker = '<!-- pr-synth:v1 -->';
+  const uniqueKeys = uniqueIssueKeys(keys);
+  const multipleIssues = uniqueKeys.length > 1;
+  const titleKey = multipleIssues
+    ? formatIssueHeading(uniqueKeys)
+    : issue?.key ?? uniqueKeys[0] ?? `PR #${pr.number}`;
+  const titleText = multipleIssues
+    ? pr.title
+    : issue?.title ?? pr.title;
   const lines = [
     `${marker}
-# ${issue?.key ?? keys[0] ?? `PR #${pr.number}`}: ${issue?.title ?? pr.title}
+# ${titleKey}: ${titleText}
 
 **Business context**
 - ${
-      issue
+      multipleIssues
+        ? `Linked issues: ${formatIssueList(uniqueKeys)}`
+        : issue
         ? `Status: ${issue.status} · Priority: ${
             issue.priority ?? 'n/a'
           } · Assignee: ${issue.assignee ?? 'n/a'}${
@@ -27,9 +37,11 @@ export function render({
           }`
         : 'No linked issue data'
     }
-${issue?.description ? `- Summary: ${truncate(issue.description, 400)}` : ''}${
-      businessWarn ? `\n- ${businessWarn}` : ''
-    }
+${
+  !multipleIssues && issue?.description
+    ? `- Summary: ${truncate(issue.description, 400)}`
+    : ''
+}${businessWarn ? `\n- ${businessWarn}` : ''}
 
 **Technical highlights**
 - Scope: ${pr.stats.files} files, +${pr.stats.additions}/-${pr.stats.deletions}
@@ -56,7 +68,15 @@ ${
 
 **Links**
 - PR: #${pr.number}
-${issue ? `- Jira: ${issue.key}` : ''}
+${
+  multipleIssues
+    ? uniqueKeys.length
+      ? `- Jira: ${formatIssueList(uniqueKeys)}`
+      : ''
+    : issue
+    ? `- Jira: ${issue.key}`
+    : ''
+}
 
 <sub>Keys seen: ${keys.join(', ') || '—'}</sub>
 `,
@@ -86,8 +106,9 @@ export function renderWithAi({
   const marker = '<!-- pr-synth:v1 -->';
   const base = process.env.JIRA_BASE_URL || ''; // pass as env in workflow if you want
 
-  const related = Object.keys(allIssues).length
-    ? Object.values(allIssues)
+  const relatedIssues = dedupeIssues(Object.values(allIssues));
+  const related = relatedIssues.length
+    ? relatedIssues
         .map(
           (it: any) =>
             `- [${it.key}](${base ? `${base}/browse/${it.key}` : ''}) ${
@@ -97,19 +118,30 @@ export function renderWithAi({
         .join('\n')
     : '';
 
+  const uniqueKeys = uniqueIssueKeys([
+    ...keys,
+    ...relatedIssues.map((it: any) => it?.key).filter(Boolean),
+  ] as string[]);
+  const multipleIssues = uniqueKeys.length > 1;
+  const titleKey = multipleIssues
+    ? formatIssueHeading(uniqueKeys)
+    : issue?.key ?? uniqueKeys[0] ?? `PR #${pr.number}`;
+  const titleText = multipleIssues
+    ? pr.title
+    : issue?.title ?? pr.title;
+  const businessContext = multipleIssues
+    ? `Linked issues: ${formatIssueList(uniqueKeys)}`
+    : issue
+    ? `Status: ${issue.status} · Priority: ${issue.priority ?? 'n/a'} · Assignee: ${
+        issue.assignee ?? 'n/a'
+      }${issue?.estimate ? ` · Estimate: ${issue.estimate}` : ''}`
+    : 'No linked issue data';
+
   return `${marker}
-# ${issue?.key ?? keys[0] ?? `PR #${pr.number}`}: ${issue?.title ?? pr.title}
+# ${titleKey}: ${titleText}
 
 **Business context**
-- ${
-    issue
-      ? `Status: ${issue.status} · Priority: ${
-          issue.priority ?? 'n/a'
-        } · Assignee: ${issue.assignee ?? 'n/a'}${
-          issue?.estimate ? ` · Estimate: ${issue.estimate}` : ''
-        }`
-      : 'No linked issue data'
-  }${businessWarn ? `\n- ${businessWarn}` : ''}
+- ${businessContext}${businessWarn ? `\n- ${businessWarn}` : ''}
 
 ${aiDescription}
 
@@ -119,10 +151,49 @@ ${related || '—'}
 **Links**
 - PR: #${pr.number}
 ${
-  issue
+  !multipleIssues && issue
     ? `- Jira: [${issue.key}](${base ? `${base}/browse/${issue.key}` : ''})`
     : ''
 }
 <sub>Keys seen: ${keys.join(', ') || '—'}</sub>
 `;
+}
+
+function uniqueIssueKeys(keys: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const key of keys) {
+    if (!key) continue;
+    const upper = key.toUpperCase();
+    if (seen.has(upper)) continue;
+    seen.add(upper);
+    out.push(upper);
+  }
+  return out;
+}
+
+function formatIssueHeading(keys: string[]): string {
+  if (!keys.length) return 'PR';
+  if (keys.length === 1) return keys[0];
+  if (keys.length === 2) return `${keys[0]} & ${keys[1]}`;
+  return `${keys[0]}, ${keys[1]} (+${keys.length - 2} more)`;
+}
+
+function formatIssueList(keys: string[]): string {
+  if (!keys.length) return '—';
+  if (keys.length <= 5) return keys.join(', ');
+  const shown = keys.slice(0, 5).join(', ');
+  return `${shown} (+${keys.length - 5} more)`;
+}
+
+function dedupeIssues(issues: any[]): any[] {
+  const seen = new Set<string>();
+  const out: any[] = [];
+  for (const it of issues) {
+    if (!it?.key) continue;
+    if (seen.has(it.key)) continue;
+    seen.add(it.key);
+    out.push(it);
+  }
+  return out;
 }
