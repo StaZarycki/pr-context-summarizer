@@ -1,3 +1,4 @@
+import * as core from '@actions/core';
 export function render({
   pr,
   issue,
@@ -80,9 +81,8 @@ export function renderWithAi({
   aiDescription: string;
 }) {
   const marker = '<!-- pr-synth:v1 -->';
-  const jiraUrl = issue
-    ? `${process.env.JIRA_BASE_URL}/browse/${issue.key}`
-    : null;
+  const jiraBaseUrl = core.getInput('jiraBaseUrl');
+  const jiraUrl = issue ? `${jiraBaseUrl}/browse/${issue.key}` : null;
 
   return `${marker}
 # ${issue?.key ?? keys[0] ?? `PR #${pr.number}`}: ${issue?.title ?? pr.title}
